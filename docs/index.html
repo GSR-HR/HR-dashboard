@@ -235,7 +235,6 @@
   <footer>GSR-HR / HR_MONTHLY_SESSION · Notion API → GitHub Actions → Gemini → GitHub Pages · 예시 데이터로 구성된 프로토타입</footer>
 </div>
 
-<script src="data.js"></script>
 <script>
 /* =========================================================================
    데이터 계약(schema): GitHub Actions가 생성하는 data.js가 아래 형태를 그대로 채웁니다.
@@ -243,10 +242,21 @@
    ※ 날짜(마감일/완료일자) 필드 없음. 버킷은 status("진행중"|"완료")로 결정됩니다.
       (노션에 BU와 별개로 '진행 상태' 선택 속성을 추가해 이 값을 채웁니다.)
    ========================================================================= */
-const DATA = window.DASHBOARD_DATA;
+let DATA;
 
 const BU_COLORS = { "편의점BU":"#1E2761", "수퍼BU":"#3B7DD8", "플랫폼SU":"#6C8FD8", "전사공통":"#8A94A6" };
-const BU_ORDER = ["편의점BU","수퍼BU","플랫폼SU","전사공통"];
+const BU_KNOWN = ["편의점BU","수퍼BU","플랫폼SU","전사공통"];
+const BU_EXTRA_COLORS = ["#5BA8A0","#B08BD8","#D88B8B","#8BB8D8","#C9A227","#7F8FA6"];
+// 노션 BU 값이 예상과 달라도 화면에 그대로 반영되도록 데이터에서 목록을 만든다
+function buList(){
+  const found = [...new Set((DATA.items||[]).map(i=>i.bu).filter(Boolean))];
+  return BU_KNOWN.filter(b=>found.includes(b)).concat(found.filter(b=>!BU_KNOWN.includes(b)));
+}
+function buColor(b){
+  if(BU_COLORS[b]) return BU_COLORS[b];
+  const extras = buList().filter(x=>!BU_COLORS[x]);
+  return BU_EXTRA_COLORS[extras.indexOf(b) % BU_EXTRA_COLORS.length];
+}
 const PRIO_COLOR = { "높음":"#F96167", "중간":"#F5A623", "낮음":"#27AE8F" };
 const PRIO_RANK = { "높음":0, "중간":1, "낮음":2 };
 const BUCKET = { "진행":"진행중", "완료":"완료" };
@@ -324,12 +334,12 @@ function renderBrief(arr){
 }
 
 function renderDonut(arr){
-  const counts = BU_ORDER.map(b=>({b, n:arr.filter(i=>i.bu===b).length}));
+  const counts = buList().map(b=>({b, n:arr.filter(i=>i.bu===b).length}));
   const total = arr.length || 1;
   const C = 2*Math.PI*45; let off = 0;
   const svg = counts.filter(c=>c.n>0).map(c=>{
     const len = (c.n/total)*C;
-    const seg = `<circle cx="60" cy="60" r="45" fill="none" stroke="${BU_COLORS[c.b]}" stroke-width="16"
+    const seg = `<circle cx="60" cy="60" r="45" fill="none" stroke="${buColor(c.b)}" stroke-width="16"
       stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-off}" transform="rotate(-90 60 60)"/>`;
     off += len; return seg;
   }).join("");
@@ -337,7 +347,7 @@ function renderDonut(arr){
   document.getElementById("donutTotal").textContent = arr.length;
   document.getElementById("donutCap").textContent = state.bucket==="진행"?"진행":"완료";
   document.getElementById("donutLegend").innerHTML = counts.map(c=>`
-    <div class="row"><span class="sw" style="background:${BU_COLORS[c.b]}"></span><span class="nm">${c.b}</span><span class="vv">${c.n}</span></div>`).join("");
+    <div class="row"><span class="sw" style="background:${buColor(c.b)}"></span><span class="nm">${c.b}</span><span class="vv">${c.n}</span></div>`).join("");
 }
 
 function renderBars(arr){
@@ -406,7 +416,9 @@ function render(){
   document.getElementById("tableTitle").textContent = now?"이번달 진행 안건":"지난달 완료 안건";
 }
 
-(function init(){
+function startDashboard(){
+  DATA = window.DASHBOARD_DATA;
+  if(!DATA || !Array.isArray(DATA.items)){ dataError("data.js 안에 데이터가 없습니다."); return; }
   document.getElementById("updated").textContent = DATA.generatedAt;
   document.getElementById("sessionLabel").textContent = DATA.session;
   const nowC = countBucket("진행"), doneC = countBucket("완료");
@@ -414,7 +426,7 @@ function render(){
   document.getElementById("segDone").textContent = doneC;
 
   const buSel = document.getElementById("buSel");
-  BU_ORDER.filter(b=>DATA.items.some(i=>i.bu===b)).forEach(b=>{
+  buList().forEach(b=>{
     const o=document.createElement("option"); o.value=b; o.textContent=b; buSel.appendChild(o);
   });
   buSel.addEventListener("change",e=>{ state.bu=e.target.value; render(); });
@@ -442,6 +454,24 @@ function render(){
     });
   });
   render();
+}
+</script>
+<script>
+// data.js 를 항상 최신으로 불러온다 (브라우저·CDN 캐시 무시)
+function dataError(msg){
+  var el = document.createElement("div");
+  el.style.cssText = "max-width:1280px;margin:0 auto 16px;padding:14px 18px;border-radius:12px;"
+    + "background:#FDE7E8;border:1px solid #F6C5C7;color:#B02A31;font-size:13px;font-weight:600";
+  el.textContent = "⚠ 데이터를 불러오지 못했습니다 — " + msg;
+  var wrap = document.querySelector(".wrap");
+  wrap.insertBefore(el, wrap.children[1]);
+}
+(function loadData(){
+  var s = document.createElement("script");
+  s.src = "data.js?t=" + Date.now();
+  s.onload  = function(){ startDashboard(); };
+  s.onerror = function(){ dataError("data.js 파일을 찾을 수 없습니다. docs 폴더에 있는지 확인하세요."); };
+  document.head.appendChild(s);
 })();
 </script>
 </body>
