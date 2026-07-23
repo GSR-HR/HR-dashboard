@@ -83,7 +83,7 @@
   .charts{display:grid;grid-template-columns:1fr 1fr;gap:16px}
   .donutWrap{display:flex;flex-direction:column;align-items:center;gap:12px}
   .donut{position:relative;width:150px;height:150px}
-  .donut .center{position:absolute;inset:0;display:grid;place-items:center;text-align:center}
+  .donut .center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;text-align:center;pointer-events:none}
   .donut .center b{font-size:26px;font-weight:800;color:var(--navy);line-height:1}
   .donut .center span{font-size:10px;color:var(--muted);font-weight:600}
   .legend{display:flex;flex-direction:column;gap:7px;width:100%}
@@ -276,6 +276,16 @@ function filtered(){
   return arr;
 }
 const countBucket = b => DATA.items.filter(i=>i.status===BUCKET[b]).length;
+// 현재 필터(BU·우선순위·검색)를 적용한 버킷별 건수
+function countVisible(b){
+  return DATA.items.filter(it=>{
+    if(it.status!==BUCKET[b]) return false;
+    if(state.bu!=="전체" && it.bu!==state.bu) return false;
+    if(state.prios.size && !state.prios.has(it.prio)) return false;
+    if(state.q && !it.name.toLowerCase().includes(state.q.toLowerCase())) return false;
+    return true;
+  }).length;
+}
 const distinct = arr => [...new Set(arr)].length;
 
 const IC = {
@@ -313,24 +323,21 @@ function renderKPI(arr){
 }
 
 function renderBrief(arr){
-  const scope = state.bu==="전체" ? "전체 BU" : state.bu;
-  const highs = arr.filter(i=>i.prio==="높음");
-  const lines = [];
-  if(state.bucket==="진행"){
-    if(arr.length) lines.push({t:`${scope} 기준 이번달 진행 안건은 ${arr.length}건이며, 우선순위 ‘높음’이 ${highs.length}건입니다.`});
-    const f = highs[0]; if(f) lines.push({t:`‘${f.name}’ — ${f.ai[0]} ${f.ai[2]}`, hi:true});
-    const mids = arr.filter(i=>i.prio==="중간").length;
-    if(arr.length) lines.push({t:`우선순위 구성: 높음 ${highs.length} · 중간 ${mids} · 낮음 ${arr.length-highs.length-mids}건.`});
-    if(!arr.length) lines.push({t:`${scope}에 이번달 진행 안건이 없습니다.`});
-  } else {
-    if(arr.length) lines.push({t:`${scope} 기준 지난달 완료 안건은 ${arr.length}건입니다. 우선순위 ‘높음’ ${highs.length}건 종결.`});
-    const buCount = {}; arr.forEach(i=>buCount[i.bu]=(buCount[i.bu]||0)+1);
-    const top = Object.entries(buCount).sort((a,b)=>b[1]-a[1])[0];
-    if(top) lines.push({t:`완료 최다 BU: ${top[0]} (${top[1]}건). 세션에서 성과로 공유 권장.`});
-    const f = arr[0]; if(f) lines.push({t:`대표 성과 — ‘${f.name}’: ${f.ai[0]} ${f.ai[1]}`});
-    if(!arr.length) lines.push({t:`${scope}에 지난달 완료 안건이 없습니다.`});
+  // Gemini가 생성한 브리핑을 우선 사용, 없으면 데이터로 계산한 요약을 표시
+  const g = (DATA.briefs || {})[state.bucket];
+  let lines;
+  if(Array.isArray(g) && g.filter(Boolean).length){
+    lines = g.filter(Boolean).map(t=>({t}));
+  }else{
+    const label = state.bucket==="진행" ? "이번달 진행" : "지난달 완료";
+    const c = p => arr.filter(i=>i.prio===p).length;
+    lines = arr.length
+      ? [{t:`${label} 안건은 총 ${arr.length}건입니다.`},
+         {t:`우선순위 구성은 높음 ${c("높음")}건, 중간 ${c("중간")}건, 낮음 ${c("낮음")}건입니다.`}]
+      : [{t:`${label} 안건이 없습니다.`}];
   }
-  document.getElementById("briefList").innerHTML = lines.map(l=>`<li class="${l.hi?'hi':''}">${l.t}</li>`).join("");
+  document.getElementById("briefList").innerHTML =
+    lines.map(l=>`<li class="${l.hi?'hi':''}">${l.t}</li>`).join("");
 }
 
 function renderDonut(arr){
@@ -375,7 +382,7 @@ function renderTable(arr){
       <td class="col-bu"><span class="bu">${it.bu}</span></td>
       <td><div class="taskname">${nameIco}${it.name}</div></td>
       <td><span class="prio ${it.prio}">${it.prio}</span></td>
-      <td class="col-ai hcol"><div class="aione">${it.ai[0]}</div></td>
+      <td class="col-ai hcol"><div class="aione">${it.oneLine || (it.ai && it.ai[0]) || ""}</div></td>
     </tr>
     <tr class="detail" data-name="${it.name}" data-open="${opened}">
       <td colspan="4"><div class="inner">
@@ -383,7 +390,7 @@ function renderTable(arr){
           <div class="block">
             <div class="t">🤖 AI 3줄 요약</div>
             <div class="types">${it.types.map(t=>`<span>${t}</span>`).join("")}</div>
-            <ul class="ai">${it.ai.map(a=>`<li>${a}</li>`).join("")}</ul>
+            <ul class="ai">${(it.ai||[]).filter(Boolean).map(a=>`<li>${a}</li>`).join("")}</ul>
             <a class="link" href="${it.url}" target="_blank"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>노션에서 열기</a>
           </div>
           <div class="block">
@@ -411,6 +418,9 @@ function render(){
   const arr = filtered();
   renderKPI(arr); renderBrief(arr); renderDonut(arr); renderBars(arr); renderTable(arr);
   const now = state.bucket==="진행";
+  // 토글 옆 숫자: 현재 BU/우선순위/검색 조건을 반영해 매번 갱신
+  document.getElementById("segNow").textContent  = countVisible("진행");
+  document.getElementById("segDone").textContent = countVisible("완료");
   document.getElementById("briefCard").className = "card brief " + (now?"now":"done");
   document.getElementById("briefTitle").textContent = now?"이번달 진행 브리핑":"지난달 완료 브리핑";
   document.getElementById("tableTitle").textContent = now?"이번달 진행 안건":"지난달 완료 안건";
@@ -421,9 +431,6 @@ function startDashboard(){
   if(!DATA || !Array.isArray(DATA.items)){ dataError("data.js 안에 데이터가 없습니다."); return; }
   document.getElementById("updated").textContent = DATA.generatedAt;
   document.getElementById("sessionLabel").textContent = DATA.session;
-  const nowC = countBucket("진행"), doneC = countBucket("완료");
-  document.getElementById("segNow").textContent = nowC;
-  document.getElementById("segDone").textContent = doneC;
 
   const buSel = document.getElementById("buSel");
   buList().forEach(b=>{
