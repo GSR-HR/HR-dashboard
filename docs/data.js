@@ -1,6 +1,6 @@
 // 이 파일은 build_dashboard.py 가 자동 생성합니다. 수동 편집 금지.
 window.DASHBOARD_DATA = {
-  "generatedAt": "2026-07-23 13:10 KST",
+  "generatedAt": "2026-07-23 13:28 KST",
   "session": "2026년 7월",
   "items": [
     {
