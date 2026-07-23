@@ -1,0 +1,48 @@
+name: Update HR Dashboard
+
+on:
+  workflow_dispatch:            # 수동 실행 버튼
+  schedule:
+    - cron: "0 0 * * 1-5"       # 평일 00:00 UTC = 09:00 KST 자동 갱신
+
+permissions:
+  contents: write              # docs/data.js 커밋/푸시 권한
+
+concurrency:                   # 중복 실행 방지
+  group: update-dashboard
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build docs/data.js
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # GEMINI_MODEL: gemini-3.5-flash   # 필요 시 모델 지정
+        run: python build_dashboard.py
+
+      - name: Commit & push if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -n "$(git status --porcelain docs/data.js)" ]; then
+            git add docs/data.js
+            git commit -m "chore: update dashboard data [skip ci]"
+            git push
+          else
+            echo "변경 없음 — 커밋 생략"
+          fi
