@@ -144,14 +144,45 @@ def _fail(r):
     sys.exit(f"[X] 노션 API 오류 {r.status_code} ({code})\n    노션 메시지: {msg}\n    → {hint}")
 
 
+def find_child_database(token: str, page_id: str):
+    """페이지 안에 들어 있는 데이터베이스(인라인 DB)의 ID를 찾는다."""
+    url = f"https://api.notion.com/v1/blocks/{page_id}/children?page_size=100"
+    try:
+        r = requests.get(url, headers=_headers(token), timeout=30)
+        if r.status_code != 200:
+            return None
+        for blk in r.json().get("results", []):
+            if blk.get("type") == "child_database":
+                return blk.get("id")
+    except Exception:
+        pass
+    return None
+
+
 def notion_query_all(token: str, db_id: str) -> list:
     db_id = normalize_db_id(db_id)
     print(f"  대상 DB: {db_id[:8]}…{db_id[-4:]}")
     url = f"https://api.notion.com/v1/databases/{db_id}/query"
     results, payload, page = [], {"page_size": 100}, 0
+    retried = False
     while True:
         r = requests.post(url, headers=_headers(token), json=payload, timeout=30)
         if r.status_code != 200:
+            # 페이지 주소를 넣은 경우 → 그 안의 데이터베이스를 자동으로 찾아 재시도
+            if (not retried and r.status_code == 400
+                    and "not a database" in (r.text or "")):
+                child = find_child_database(token, db_id)
+                if child:
+                    retried = True
+                    db_id = child
+                    url = f"https://api.notion.com/v1/databases/{child}/query"
+                    print(f"    (페이지 안의 데이터베이스를 찾았습니다 → {child[:8]}…)")
+                    continue
+                sys.exit(
+                    "[X] 입력한 주소는 페이지이고, 그 안에서 데이터베이스를 찾지 못했습니다.\n"
+                    "    → 캘린더 블록 우측 상단의 ··· → '링크 복사'로 얻은 주소를 넣거나,\n"
+                    "      ··· → '전체 페이지로 열기' 후의 주소를 사용하세요."
+                )
             _fail(r)
         data = r.json()
         batch = data.get("results", [])
