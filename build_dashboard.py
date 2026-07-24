@@ -10,6 +10,7 @@ HR Monthly Session 대시보드 데이터 빌더
 
 ■ 환경변수
   NOTION_TOKEN / NOTION_DATABASE_ID / GEMINI_API_KEY
+  (선택) NOTION_CALENDAR_DATABASE_ID  임원 주요 일정 DB
   (선택) GEMINI_MODEL, LOCAL_DIR
 """
 
@@ -30,16 +31,63 @@ from google import genai
 REPO_OUT = os.path.join("docs", "data.js")
 DEFAULT_LOCAL_DIR = r"C:\Users\Administrator\Desktop\플랫폼인사팀 업무파일\98. AI\AI Monthly session\데이터"
 
-PROPS = {
-    "name":     "작업 이름",
-    "desc":     "설명",
-    "prio":     "우선순위",
-    "bu":       "상태",
-    "progress": "진행 상태",
-    "types":    "작업 유형",
+# 노션 속성 이름 후보 — 앞에 있는 것부터 찾아 자동으로 연결합니다.
+# 이름을 바꿔도 아래 목록에 있으면 그대로 동작합니다.
+PROP_CANDIDATES = {
+    "name":     ["작업 이름", "이름", "제목", "Name"],
+    "prio":     ["우선순위", "중요도", "Priority"],
+    "bu":       ["BU", "사업부", "소속BU", "상태", "Status"],
+    "progress": ["진행 상태", "진행상태", "진행", "상태", "Status"],
+    "types":    ["작업 유형", "유형", "분류", "Tags"],
+    "desc":     ["설명", "내용", "비고", "Description"],
+}
+PROPS = {}          # 첫 조회 때 실제 속성 이름으로 채워집니다
+
+
+def resolve_props(page: dict):
+    """실제 노션 속성 이름을 찾아 PROPS에 연결한다."""
+    props = page.get("properties", {})
+    used = set()
+    # bu → progress 순서로 먼저 잡아야 '상태'가 올바른 쪽에 배정됩니다
+    for key in ["name", "prio", "bu", "progress", "types", "desc"]:
+        for cand in PROP_CANDIDATES[key]:
+            if cand in props and cand not in used:
+                PROPS[key] = cand
+                used.add(cand)
+                break
+    print("  속성 연결:")
+    for key in ["name", "bu", "progress", "prio", "types", "desc"]:
+        print(f"    {key:9} → {PROPS.get(key) or '(없음)'}")
+    missing = [k for k in ("name",) if not PROPS.get(k)]
+    if missing:
+        sys.exit(
+            "[X] 제목 속성을 찾지 못했습니다.\n"
+            f"    노션의 속성 이름: {', '.join(props.keys())}\n"
+            "    → PROP_CANDIDATES 에 실제 이름을 추가하세요."
+        )
+
+# ── 임원 주요 일정 캘린더 DB (별도 데이터베이스) ──────────────
+# 환경변수 NOTION_CALENDAR_DATABASE_ID 를 설정하면 캘린더가 표시됩니다.
+CAL_CANDIDATES = {
+    "title": ["일정명", "일정", "이름", "제목", "Name"],
+    "date":  ["기간", "일자", "날짜", "Date"],
+    "cat":   ["구분", "분류", "유형", "대상"],
 }
 
+
+def _pick(props: dict, names: list):
+    for n in names:
+        if n in props:
+            return props[n]
+    return None
+
 PRIO_ALLOWED = {"높음", "중간", "낮음"}
+# 노션에서 쓰는 다른 표기를 대시보드 값으로 변환
+PRIO_ALIAS = {
+    "보통": "중간", "중": "중간", "normal": "중간", "medium": "중간",
+    "상": "높음", "high": "높음", "긴급": "높음",
+    "하": "낮음", "low": "낮음",
+}
 # 진행 상태 값이 아래 중 하나면 '완료' 버킷으로 분류 (공백 무시하고 비교)
 DONE_LABELS = {"완료", "종료", "완료됨", "done", "닫힘", "마감"}
 
@@ -178,13 +226,14 @@ def _select(p):
 
 def map_page(page: dict):
     props = page.get("properties", {})
-    P = lambda k: props.get(PROPS[k])
+    P = lambda k: props.get(PROPS.get(k) or "")
 
     name = _title(P("name"))
     if not name:
         return None
 
-    prio = _select(P("prio")) or "중간"
+    prio_raw = _select(P("prio")).strip()
+    prio = PRIO_ALIAS.get(prio_raw.lower(), PRIO_ALIAS.get(prio_raw, prio_raw))
     if prio not in PRIO_ALLOWED:
         prio = "중간"
 
@@ -201,6 +250,36 @@ def map_page(page: dict):
         "descProp": _rich(P("desc")),
         "url":    page.get("url", "#"),
     }
+
+
+def fetch_calendar(token: str):
+    """임원 주요 일정 DB를 읽어 캘린더용 일정 목록을 반환."""
+    db = os.environ.get("NOTION_CALENDAR_DATABASE_ID", "").strip()
+    if not db:
+        print("  (캘린더 DB가 설정되지 않아 건너뜁니다)")
+        return []
+
+    pages = notion_query_all(token, db)
+    events = []
+    for pg in pages:
+        props = pg.get("properties", {})
+        title = _title(_pick(props, CAL_CANDIDATES["title"]))
+        if not title:
+            continue
+        d = (_pick(props, CAL_CANDIDATES["date"]) or {}).get("date") or {}
+        start = (d.get("start") or "")[:10]
+        if not start:
+            continue
+        end = (d.get("end") or start)[:10]
+        events.append({
+            "title": title,
+            "start": start,
+            "end": end,
+            "cat": _select(_pick(props, CAL_CANDIDATES["cat"])) or "주요임원",
+        })
+    events.sort(key=lambda e: (e["start"], e["end"]))
+    print(f"  일정 {len(events)}건")
+    return events
 
 
 # ─────────────────────────────────────────────────────────────
@@ -383,6 +462,8 @@ def build(save_local: bool):
     pages = notion_query_all(token, db_id)
     print(f"  노션이 돌려준 행: {len(pages)}건")
 
+    if pages:
+        resolve_props(pages[0])
     items = [m for m in (map_page(p) for p in pages) if m]
     skipped = len(pages) - len(items)
     if skipped:
@@ -414,6 +495,9 @@ def build(save_local: bool):
     else:
         print("  모든 안건 AI 분석 성공")
 
+    print("· 임원 주요 일정 조회 중…")
+    cal_events = fetch_calendar(token)
+
     print("· 브리핑 생성 중…")
     now_items = [i for i in items if i["status"] == "진행중"]
     done_items = [i for i in items if i["status"] == "완료"]
@@ -436,6 +520,7 @@ def build(save_local: bool):
         "session": f"{now.year}년 {now.month}월",
         "briefs": briefs,
         "items": clean,
+        "calendar": {"month": now.strftime("%Y-%m"), "events": cal_events},
     }
 
     print("· 파일 쓰는 중…")
