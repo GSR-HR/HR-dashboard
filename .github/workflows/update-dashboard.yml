@@ -33,6 +33,7 @@ jobs:
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
           NOTION_CALENDAR_DATABASE_ID: ${{ secrets.NOTION_CALENDAR_DATABASE_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          NOTION_PEOPLECYCLE_DATABASE_ID: ${{ secrets.NOTION_PEOPLECYCLE_DATABASE_ID }}
           # GEMINI_MODEL: gemini-3.5-flash   # 필요 시 모델 지정
         run: python build_dashboard.py
 
