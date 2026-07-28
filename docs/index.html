@@ -168,6 +168,52 @@
     .calbar{font-size:9px;padding:2px 4px}
     .caldates div{padding:5px 5px 2px;font-size:10px}
   }
+
+  /* ── HR People Cycle 연간 타임라인 ── */
+  .pccard{margin-top:16px}
+  .pchead{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+  .pchead h3{margin:0}
+  .pclegend{display:flex;gap:13px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+  .pclegend span{display:flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;color:#41506E}
+  .pclegend i{width:11px;height:11px;border-radius:3px;flex:none}
+  .pclegend .dm{width:9px;height:9px;transform:rotate(45deg);border-radius:1px}
+  .pcgrid{position:relative;display:grid;grid-template-columns:64px 108px 1fr;
+    border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .pc-h{background:var(--navy);color:#fff;font-size:11px;font-weight:800;display:flex;
+    align-items:center;justify-content:center;padding:8px 0}
+  .pc-mhead{display:grid;grid-template-columns:repeat(12,1fr)}
+  .pc-mhead div{color:#fff;font-size:11px;font-weight:700;text-align:center;padding:8px 0;
+    border-left:0.5px solid rgba(255,255,255,.15)}
+  .pc-g{color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;
+    justify-content:center;text-align:center;padding:4px;line-height:1.3;height:100%}
+  .pc-s{font-size:11px;color:var(--ink);font-weight:600;display:flex;align-items:center;
+    padding:0 8px;background:var(--card);border-left:1px solid var(--line);border-top:1px solid var(--line);height:100%}
+  .pc-lane{position:relative;border-left:1px solid var(--line);border-top:1px solid var(--line)}
+  .pc-gl{position:absolute;top:0;bottom:0;border-left:0.5px solid #EDF1F8}
+  .pc-bar{position:absolute;height:20px;border-radius:4px;font-size:10px;font-weight:700;color:#fff;
+    display:flex;align-items:center;padding:0 6px;overflow:hidden;white-space:nowrap;
+    text-overflow:ellipsis;cursor:pointer;transition:filter .1s}
+  .pc-bar:hover{filter:brightness(1.08)}
+  .pc-bar[data-on="1"]{outline:2px solid var(--navy);outline-offset:1px}
+  .pc-dot{position:absolute;width:12px;height:12px;background:#C0392B;transform:translateX(-50%) rotate(45deg);
+    cursor:pointer;z-index:3}
+  .pc-dot[data-on="1"]{outline:2px solid var(--navy);outline-offset:2px}
+  .pc-dlab{position:absolute;font-size:10px;font-weight:700;color:var(--ink);white-space:nowrap;
+    pointer-events:none;display:flex;align-items:center;height:20px}
+  .pc-today{position:absolute;top:0;bottom:0;width:0;border-left:2px solid #E24B4A;z-index:8;pointer-events:none}
+  .pc-tlab{position:absolute;top:2px;transform:translateX(-50%);background:#E24B4A;color:#fff;font-size:9px;
+    font-weight:700;padding:1px 6px;border-radius:3px;white-space:nowrap;z-index:9}
+  .pc-panel{margin-top:12px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;
+    background:var(--card);min-height:60px}
+  .pc-panel .pt{font-size:14px;font-weight:800;color:var(--navy);display:flex;align-items:center;gap:8px}
+  .pc-panel .pm{font-size:11px;color:var(--muted);margin:3px 0 8px;font-weight:600}
+  .pc-panel .pb{font-size:12.5px;color:#3A4358;line-height:1.7;white-space:pre-line}
+  .pc-empty{padding:34px;text-align:center;color:var(--muted);font-size:13px}
+  @media(max-width:700px){
+    .pcgrid{grid-template-columns:48px 78px 1fr}
+    .pc-bar,.pc-dlab{font-size:9px}
+    .pc-g{font-size:10px}.pc-s{font-size:10px;padding:0 4px}
+  }
   footer{margin-top:22px;text-align:center;font-size:11px;color:#5E6B86}
 
   @media(max-width:920px){
@@ -277,6 +323,19 @@
     </div>
     <div class="callegend" id="calLegend"></div>
     <div class="calgrid" id="calGrid"></div>
+  </div>
+
+
+  <div class="card pccard" id="pcCard">
+    <div class="pchead">
+      <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9"/><polyline points="21 3 21 9 15 9"/></svg>HR People Cycle</h3>
+      <span style="font-size:12px;color:var(--muted);font-weight:700" id="pcYear">2026</span>
+    </div>
+    <div class="pclegend" id="pcLegend"></div>
+    <div class="pcgrid" id="pcGrid"></div>
+    <div class="pc-panel" id="pcPanel">
+      <div class="pt" style="color:var(--muted);font-weight:600">◆ 또는 막대를 클릭하면 여기에 상세 내용이 표시됩니다.</div>
+    </div>
   </div>
 
   <footer>GSR-HR / HR_MONTHLY_SESSION · Notion API → GitHub Actions → Gemini → GitHub Pages · 예시 데이터로 구성된 프로토타입</footer>
@@ -587,6 +646,164 @@ function shiftMonth(delta){
   renderCalendar();
 }
 
+
+/* ───────── HR People Cycle 연간 타임라인 ───────── */
+const PC_GROUPS = [
+  { name:"성과 창출",       color:"#2E5A9C",
+    subs:["정직원 평가","진단","임원 평가","조직개편/임원인사"],
+    aliases:["성과창출","성과 창출","성과"] },
+  { name:"경력 성장",       color:"#C98A2B",
+    subs:["핵심 포지션","임원","직책자","구성원"],
+    aliases:["경력성장","경력 성장","경력"] },
+  { name:"인정과 보상",     color:"#4A7A5A",
+    subs:["보상","포상"],
+    aliases:["인정과보상","인정과 보상","인정","보상영역"] },
+  { name:"소속감·조직몰입", color:"#7A6AA8",
+    subs:["주요행사/기타","커뮤니케이션/문화"],
+    aliases:["소속감조직몰입","소속감·조직몰입","소속감","조직몰입"] },
+];
+const PC_M = ['','1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+const pcNorm = t => (t||"").replace(/[\s,·\-\/]/g,"");
+
+// 노션 대분류 값 → 그룹 찾기
+function pcGroupOf(daebun){
+  const n = pcNorm(daebun);
+  return PC_GROUPS.find(g => g.aliases.some(a=>pcNorm(a)===n))
+      || PC_GROUPS.find(g => g.aliases.some(a=>n.includes(pcNorm(a))))
+      || null;
+}
+function pcColorOf(daebun){ const g=pcGroupOf(daebun); return g? g.color : "#8A94A6"; }
+
+// 세로축(대분류>소분류) 구성: 노션 데이터에서 실제 등장한 소분류를 그룹별로 모음
+function pcAxis(events){
+  const axis = [];
+  PC_GROUPS.forEach(g=>{
+    // 미리 정의된 소분류 순서 우선, 데이터에만 있는 소분류는 뒤에 추가
+    const found = events.filter(e=>{const gg=pcGroupOf(e.daebun); return gg && gg.name===g.name;})
+                        .map(e=>e.sobun);
+    const uniq = [...new Set(found)];
+    const ordered = g.subs.filter(s=>uniq.some(u=>pcNorm(u)===pcNorm(s)));
+    const extra = uniq.filter(u=>!g.subs.some(s=>pcNorm(s)===pcNorm(u)));
+    const subs = ordered.concat(extra);
+    if(subs.length) axis.push({ group:g, subs });
+  });
+  return axis;
+}
+
+function renderPeopleCycle(){
+  const pcData = DATA.peopleCycle || {};
+  const events = (pcData.events || []).filter(e=>e && e.name && e.startM);
+  const card = document.getElementById("pcCard");
+  if(!events.length){
+    // 데이터 없으면 안내만
+    document.getElementById("pcLegend").innerHTML = "";
+    document.getElementById("pcGrid").innerHTML = '<div class="pc-empty">등록된 People Cycle 일정이 없습니다.</div>';
+    document.getElementById("pcYear").textContent = pcData.year || new Date().getFullYear();
+    return;
+  }
+  document.getElementById("pcYear").textContent = pcData.year || new Date().getFullYear();
+
+  // 범례
+  document.getElementById("pcLegend").innerHTML =
+    PC_GROUPS.map(g=>`<span><i style="background:${g.color}"></i>${g.name}</span>`).join("")
+    + '<span style="margin-left:4px"><i class="dm" style="background:#C0392B"></i>시점형 ◆</span>';
+
+  const COLS=12, RH=26, PAD=4;
+  const axis = pcAxis(events);
+  const grid = document.getElementById("pcGrid");
+  const panel = document.getElementById("pcPanel");
+
+  // 헤더
+  let html = '<div class="pc-h" style="grid-column:1;grid-row:1;border-right:0.5px solid rgba(255,255,255,.15)">구분</div>'
+           + '<div class="pc-h" style="grid-column:2;grid-row:1"></div>'
+           + '<div class="pc-mhead" style="grid-column:3;grid-row:1">'
+           + PC_M.slice(1).map(m=>`<div>${m}</div>`).join("") + '</div>';
+  grid.innerHTML = html;
+
+  // 각 소분류 행 높이 계산 (겹치는 일정 lane 쌓기)
+  const rowEvents = {}, rowH = {};
+  axis.forEach(a=>a.subs.forEach(sub=>{
+    const evs = events.filter(e=>pcNorm(e.sobun)===pcNorm(sub)
+                              && pcGroupOf(e.daebun) && pcGroupOf(e.daebun).name===a.group.name);
+    const lanes=[];
+    evs.forEach(ev=>{ let L=0;
+      while(lanes[L] && lanes[L].some(o=>!(ev.endM<o.startM || ev.startM>o.endM))) L++;
+      lanes[L]=lanes[L]||[]; lanes[L].push(ev); ev._l=L;
+    });
+    rowEvents[a.group.name+"|"+sub]=evs;
+    rowH[a.group.name+"|"+sub]=Math.max(1,lanes.length)*RH+PAD*2;
+  }));
+
+  let r=2;
+  axis.forEach(a=>{
+    const span=a.subs.length;
+    const gc=document.createElement("div");
+    gc.className="pc-g";
+    gc.style.cssText=`background:${a.group.color};grid-column:1;grid-row:${r} / span ${span}`;
+    gc.textContent=a.group.name; grid.appendChild(gc);
+
+    a.subs.forEach(sub=>{
+      const key=a.group.name+"|"+sub;
+      const h=rowH[key];
+      const sc=document.createElement("div");
+      sc.className="pc-s";
+      sc.style.cssText=`grid-column:2;grid-row:${r};min-height:${h}px`;
+      sc.textContent=sub; grid.appendChild(sc);
+
+      const lane=document.createElement("div");
+      lane.className="pc-lane";
+      lane.style.cssText=`grid-column:3;grid-row:${r};min-height:${h}px`;
+      for(let c=1;c<COLS;c++){const gl=document.createElement("div");gl.className="pc-gl";gl.style.left=(c/COLS*100)+"%";lane.appendChild(gl);}
+
+      rowEvents[key].forEach(ev=>{
+        const top=PAD+ev._l*RH;
+        const isDot = (ev.type && pcNorm(ev.type).includes("시점")) || ev.startM===ev.endM && ev.forceDot;
+        if((ev.type && pcNorm(ev.type).includes("시점"))){
+          const d=document.createElement("div");d.className="pc-dot";
+          d.style.left=((ev.startM-0.5)/COLS*100)+"%";d.style.top=(top+4)+"px";
+          d.title=ev.name;d.onclick=()=>pcShow(ev);lane.appendChild(d);
+          const lb=document.createElement("div");lb.className="pc-dlab";
+          lb.style.left=`calc(${((ev.startM-0.5)/COLS*100)}% + 10px)`;lb.style.top=top+"px";
+          lb.textContent=ev.name;lane.appendChild(lb);
+        }else{
+          const w=(ev.endM-ev.startM+1)/COLS*100, left=(ev.startM-1)/COLS*100;
+          const b=document.createElement("div");b.className="pc-bar";
+          b.style.left=left+"%";b.style.width=`calc(${w}% - 3px)`;b.style.top=top+"px";
+          b.style.background=pcColorOf(ev.daebun);
+          b.textContent=ev.name;b.title=ev.name;
+          b.dataset.name=ev.name;b.onclick=()=>pcShow(ev);lane.appendChild(b);
+        }
+      });
+      grid.appendChild(lane);
+      r++;
+    });
+  });
+
+  // 오늘 세로선 — 전체 관통 (구분+소분류 영역 폭 = 64+108 = 172px)
+  const now=new Date();
+  const pcYear = parseInt(pcData.year || now.getFullYear(), 10);
+  if(now.getFullYear()===pcYear){
+    const frac=(now.getMonth()+now.getDate()/30)/COLS;
+    const line=document.createElement("div");line.className="pc-today";
+    line.style.left=`calc(172px + (100% - 172px) * ${frac})`;grid.appendChild(line);
+    const lab=document.createElement("div");lab.className="pc-tlab";
+    lab.style.left=`calc(172px + (100% - 172px) * ${frac})`;lab.textContent="오늘";grid.appendChild(lab);
+  }
+
+  function pcShow(ev){
+    const period = ev.startM===ev.endM ? PC_M[ev.startM] : `${PC_M[ev.startM]} ~ ${PC_M[ev.endM]}`;
+    const isDot = ev.type && pcNorm(ev.type).includes("시점");
+    const tag = isDot ? "시점형 ◆" : "기간형";
+    const g = pcGroupOf(ev.daebun);
+    panel.innerHTML =
+      `<div class="pt"><span style="width:10px;height:10px;border-radius:2px;background:${pcColorOf(ev.daebun)};display:inline-block"></span>${ev.name}</div>`
+      + `<div class="pm">${(g?g.name:ev.daebun)} · ${ev.sobun} · ${period} · ${tag}</div>`
+      + `<div class="pb">${ev.detail || "상세 내용이 작성되지 않았습니다."}</div>`;
+    // 선택 표시
+    grid.querySelectorAll('.pc-bar[data-on="1"],.pc-dot[data-on="1"]').forEach(el=>el.dataset.on="0");
+  }
+}
+
 function render(){
   const arr = filtered();
   renderKPI(arr); renderBrief(arr); renderDonut(arr); renderBars(arr); renderTable(arr);
@@ -639,6 +856,7 @@ function startDashboard(){
   document.getElementById("calPrev").addEventListener("click", ()=>shiftMonth(-1));
   document.getElementById("calNext").addEventListener("click", ()=>shiftMonth(1));
   renderCalendar();
+  renderPeopleCycle();
 
   render();
 }

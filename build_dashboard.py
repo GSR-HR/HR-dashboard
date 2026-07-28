@@ -10,7 +10,8 @@ HR Monthly Session 대시보드 데이터 빌더
 
 ■ 환경변수
   NOTION_TOKEN / NOTION_DATABASE_ID / GEMINI_API_KEY
-  (선택) NOTION_CALENDAR_DATABASE_ID  임원 주요 일정 DB
+  (선택) NOTION_CALENDAR_DATABASE_ID     임원 주요 일정 DB
+  (선택) NOTION_PEOPLECYCLE_DATABASE_ID  HR People Cycle DB
   (선택) GEMINI_MODEL, LOCAL_DIR
 """
 
@@ -44,9 +45,21 @@ PROP_CANDIDATES = {
 PROPS = {}          # 첫 조회 때 실제 속성 이름으로 채워집니다
 
 
-def resolve_props(page: dict):
+def _opt_value(node):
+    """select / status / multi_select 속성의 값을 문자열로."""
+    if not node:
+        return ""
+    t = node.get("type")
+    if t in ("select", "status"):
+        return _select(node)
+    if t == "multi_select":
+        return ",".join(_multi(node))
+    return ""
+
+
+def resolve_props(pages: list):
     """실제 노션 속성 이름을 찾아 PROPS에 연결한다."""
-    props = page.get("properties", {})
+    props = pages[0].get("properties", {})
     used = set()
     # bu → progress 순서로 먼저 잡아야 '상태'가 올바른 쪽에 배정됩니다
     for key in ["name", "prio", "bu", "progress", "types", "desc"]:
@@ -55,16 +68,51 @@ def resolve_props(page: dict):
                 PROPS[key] = cand
                 used.add(cand)
                 break
+
+    # ── 이름으로 못 찾은 경우 값의 생김새로 추정 ──────────────
+    sample = pages[:20]
+
+    def scan(pred):
+        """조건에 맞는 값을 가진 선택형 속성 이름을 찾는다."""
+        for pname in props:
+            if pname in used:
+                continue
+            for pg in sample:
+                v = _opt_value(pg.get("properties", {}).get(pname))
+                if v and pred(v):
+                    return pname, v
+        return None, None
+
+    if not PROPS.get("bu"):
+        name, v = scan(lambda v: re.search(r"(BU|SU|본부|부문|전사)", v, re.I))
+        if name:
+            PROPS["bu"] = name; used.add(name)
+            print(f"    (BU 속성을 값에서 찾음: '{name}' 예: {v})")
+
+    if not PROPS.get("progress"):
+        done_or_wip = {"완료", "진행중", "진행 중", "할일", "할 일", "종료", "예정", "대기"}
+        name, v = scan(lambda v: v.replace(" ", "") in {x.replace(" ", "") for x in done_or_wip})
+        if name:
+            PROPS["progress"] = name; used.add(name)
+            print(f"    (진행 상태 속성을 값에서 찾음: '{name}' 예: {v})")
+
     print("  속성 연결:")
     for key in ["name", "bu", "progress", "prio", "types", "desc"]:
         print(f"    {key:9} → {PROPS.get(key) or '(없음)'}")
-    missing = [k for k in ("name",) if not PROPS.get(k)]
-    if missing:
+
+    if not PROPS.get("name"):
         sys.exit(
             "[X] 제목 속성을 찾지 못했습니다.\n"
             f"    노션의 속성 이름: {', '.join(props.keys())}\n"
             "    → PROP_CANDIDATES 에 실제 이름을 추가하세요."
         )
+
+    for key, msg in (("bu", "모든 안건이 '전사공통'으로 표시됩니다"),
+                     ("progress", "모든 안건이 '진행중'으로 분류됩니다")):
+        if not PROPS.get(key):
+            print(f"  ⚠ {key} 속성을 찾지 못했습니다 — {msg}.", file=sys.stderr)
+            print(f"    노션에 있는 속성: {', '.join(props.keys())}", file=sys.stderr)
+            print(f"    → 위 이름 중 맞는 것을 PROP_CANDIDATES['{key}'] 에 추가하세요.", file=sys.stderr)
 
 # ── 임원 주요 일정 캘린더 DB (별도 데이터베이스) ──────────────
 # 환경변수 NOTION_CALENDAR_DATABASE_ID 를 설정하면 캘린더가 표시됩니다.
@@ -313,6 +361,60 @@ def fetch_calendar(token: str):
     return events
 
 
+# ── HR People Cycle DB 속성 후보 ──────────────────────────────
+PC_CANDIDATES = {
+    "title": ["일정명", "일정", "이름", "제목", "Name"],
+    "date":  ["기간", "일자", "날짜", "Date"],
+    "dae":   ["대분류", "구분", "카테고리", "영역"],
+    "so":    ["소분류", "세부", "항목"],
+    "type":  ["유형", "형태", "종류", "Type"],
+    "detail":["상세내용", "상세", "내용", "설명", "비고"],
+}
+
+
+def _month_of(date_str: str) -> int:
+    """'2026-04-15' → 4. 실패 시 0."""
+    try:
+        return int(date_str[5:7])
+    except Exception:
+        return 0
+
+
+def fetch_people_cycle(token: str):
+    """People Cycle DB를 읽어 연간 타임라인용 목록을 반환."""
+    db = os.environ.get("NOTION_PEOPLECYCLE_DATABASE_ID", "").strip()
+    if not db:
+        print("  (People Cycle DB가 설정되지 않아 건너뜁니다)")
+        return {"year": str(dt.datetime.now().year), "events": []}
+
+    pages = notion_query_all(token, db)
+    events, year = [], None
+    for pg in pages:
+        props = pg.get("properties", {})
+        title = _title(_pick(props, PC_CANDIDATES["title"]))
+        if not title:
+            continue
+        d = (_pick(props, PC_CANDIDATES["date"]) or {}).get("date") or {}
+        start = (d.get("start") or "")[:10]
+        if not start:
+            continue
+        end = (d.get("end") or start)[:10]
+        if year is None and len(start) >= 4:
+            year = start[:4]
+        events.append({
+            "name":   title,
+            "daebun": _select(_pick(props, PC_CANDIDATES["dae"])) or "",
+            "sobun":  _select(_pick(props, PC_CANDIDATES["so"])) or "",
+            "startM": _month_of(start),
+            "endM":   _month_of(end) or _month_of(start),
+            "type":   _select(_pick(props, PC_CANDIDATES["type"])) or "기간형",
+            "detail": _rich(_pick(props, PC_CANDIDATES["detail"])) or "",
+        })
+    events = [e for e in events if e["startM"]]
+    print(f"  People Cycle 일정 {len(events)}건")
+    return {"year": year or str(dt.datetime.now().year), "events": events}
+
+
 # ─────────────────────────────────────────────────────────────
 # Gemini 분석
 # ─────────────────────────────────────────────────────────────
@@ -494,7 +596,7 @@ def build(save_local: bool):
     print(f"  노션이 돌려준 행: {len(pages)}건")
 
     if pages:
-        resolve_props(pages[0])
+        resolve_props(pages)
     items = [m for m in (map_page(p) for p in pages) if m]
     skipped = len(pages) - len(items)
     if skipped:
@@ -529,6 +631,9 @@ def build(save_local: bool):
     print("· 임원 주요 일정 조회 중…")
     cal_events = fetch_calendar(token)
 
+    print("· HR People Cycle 조회 중…")
+    people_cycle = fetch_people_cycle(token)
+
     print("· 브리핑 생성 중…")
     now_items = [i for i in items if i["status"] == "진행중"]
     done_items = [i for i in items if i["status"] == "완료"]
@@ -552,6 +657,7 @@ def build(save_local: bool):
         "briefs": briefs,
         "items": clean,
         "calendar": {"month": now.strftime("%Y-%m"), "events": cal_events},
+        "peopleCycle": people_cycle,
     }
 
     print("· 파일 쓰는 중…")
